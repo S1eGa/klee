@@ -5534,7 +5534,7 @@ void Executor::executeAlloc(ExecutionState &state, ref<Expr> size, bool isLocal,
         os->write(reallocFrom);
         if (state.inSymbolics(*reallocFrom->getObject())) {
           state.replaceMemoryObjectFromSymbolics(*reallocFrom->getObject(), *mo,
-                                                 *os);
+                                                 *reallocFrom, *os);
         }
         state.removePointerResolutions(reallocFrom->getObject());
         state.addressSpace.unbindObject(reallocFrom->getObject());
@@ -6052,7 +6052,7 @@ bool Executor::resolveMemoryObjects(
         if (op.first == idLazyInitialization.get()) {
           state.addSymbolic(*op.first, *wos);
         } else {
-          state.replaceSymbolic(*op.first, *wos);
+          state.replaceSymbolic(*op.first, *op.second, *wos);
         }
 
         mayBeResolvedMemoryObjects.push_back(idLazyInitialization);
@@ -6397,7 +6397,7 @@ void Executor::executeMemoryOperation(
       if (isWrite) {
         ObjectState *wos = state->addressSpace.getWriteable(mo, os);
         if (state->inSymbolics(*mo)) {
-          state->replaceSymbolic(*mo, *wos);
+          state->replaceSymbolic(*mo, *os, *wos);
         }
         maxNewWriteableOSSize =
             std::max(maxNewWriteableOSSize, wos->getSparseStorageEntries());
@@ -6516,7 +6516,7 @@ void Executor::executeMemoryOperation(
 
           ObjectState *wos = state->addressSpace.getWriteable(mo, os);
           if (state->inSymbolics(*mo)) {
-            state->replaceSymbolic(*mo, *wos);
+            state->replaceSymbolic(*mo, *os, *wos);
           }
           maxNewWriteableOSSize =
               std::max(maxNewWriteableOSSize, wos->getSparseStorageEntries());
@@ -6605,7 +6605,7 @@ void Executor::executeMemoryOperation(
       if (isWrite) {
         ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
         if (bound->inSymbolics(*mo)) {
-          bound->replaceSymbolic(*mo, *wos);
+          bound->replaceSymbolic(*mo, *os, *wos);
         }
         maxNewWriteableOSSize =
             std::max(maxNewWriteableOSSize, wos->getSparseStorageEntries());
@@ -6783,7 +6783,7 @@ void Executor::lazyInitializeLocalObject(ExecutionState &state, StackFrame &sf,
   if (op.first == id.get()) {
     state.addSymbolic(*op.first, *wos);
   } else {
-    state.replaceSymbolic(*op.first, *wos);
+    state.replaceSymbolic(*op.first, *op.second, *wos);
   }
 }
 
@@ -7290,13 +7290,15 @@ void Executor::logState(const ExecutionState &state, int id,
   *f << state.symbolics.size() << " symbolics total. "
      << "Symbolics:\n";
   size_t sc = 0;
-  for (const auto &[memoryObject, symbolic] : state.symbolics) {
-    *f << "Symbolic number " << sc++ << "\n";
-    *f << "Associated memory object: " << symbolic.memoryObject.get()->id
-       << "\n";
-    *f << "Memory object size: ";
-    symbolic.memoryObject.get()->getSizeExpr()->print(*f);
-    *f << "\n";
+  for (const auto &[memoryObject, symbolicsSet] : state.symbolics) {
+    for (auto &symbolic : symbolicsSet) {
+      *f << "Symbolic number " << sc++ << "\n";
+      *f << "Associated memory object: " << symbolic.memoryObject.get()->id
+         << "\n";
+      *f << "Memory object size: ";
+      symbolic.memoryObject.get()->getSizeExpr()->print(*f);
+      *f << "\n";
+    }
   }
   *f << "\n";
   *f << "State constraints:\n";
@@ -7359,10 +7361,12 @@ Executor::getSymbolicSolution(const ExecutionState &state) {
   std::vector<klee::Symbolic> symbolics;
   symbolics.reserve(state.symbolics.size());
 
-  for (auto &it : state.symbolics) {
-    if ((OnlyOutputMakeSymbolicArrays ? it.second.isMakeSymbolic()
-                                      : it.second.isReproducible())) {
-      symbolics.push_back(it.second);
+  for (auto &[object, symbolicsSet] : state.symbolics) {
+    for (auto &singleSymbolic : symbolicsSet) {
+      if ((OnlyOutputMakeSymbolicArrays ? singleSymbolic.isMakeSymbolic()
+                                        : singleSymbolic.isReproducible())) {
+        symbolics.push_back(singleSymbolic);
+      }
     }
   }
 
@@ -7550,7 +7554,7 @@ void Executor::doImpliedValueConcretization(ExecutionState &state, ref<Expr> e,
                "not possible? read only object with static read?");
         ObjectState *wos = state.addressSpace.getWriteable(mo, os);
         if (state.inSymbolics(*mo)) {
-          state.replaceSymbolic(*mo, *wos);
+          state.replaceSymbolic(*mo, *os, *wos);
         }
         maxNewWriteableOSSize =
             std::max(maxNewWriteableOSSize, wos->getSparseStorageEntries());

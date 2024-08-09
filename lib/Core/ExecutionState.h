@@ -280,6 +280,7 @@ struct Symbolic {
 
   Symbolic(const Symbolic &other) = default;
   Symbolic &operator=(const Symbolic &other) = default;
+  bool operator<(const Symbolic &rhs) const { return num < rhs.num; }
 };
 
 struct MemorySubobject {
@@ -383,7 +384,9 @@ public:
   /// Copies of ExecutionState should not copy ptreeNode
   PTreeNode *ptreeNode = nullptr;
 
-  ImmutableMap<const MemoryObject *, Symbolic, MemoryObjectLT> symbolics;
+  ImmutableMap<const MemoryObject *, ImmutableSet<Symbolic>, MemoryObjectLT>
+      symbolics;
+  std::size_t stateSymbolicsNum = 0;
 
   /// @brief map from memory accesses to accessed objects and access offsets.
   ExprHashMap<std::set<ref<const MemoryObject>>> resolvedPointers;
@@ -478,10 +481,12 @@ public:
   void popFrame();
 
   void addSymbolic(const MemoryObject &mo, const ObjectState &os);
-  void replaceSymbolic(const MemoryObject &mo, ObjectState &os);
-  void replaceMemoryObjectFromSymbolics(const MemoryObject &oldMemObj,
-                                        const MemoryObject &newMemObj,
-                                        ObjectState &newObjState);
+  void replaceSymbolic(const MemoryObject &object, const ObjectState &oldState,
+                       const ObjectState &newState);
+  void replaceMemoryObjectFromSymbolics(const MemoryObject &oldObject,
+                                        const MemoryObject &newObject,
+                                        const ObjectState &oldState,
+                                        const ObjectState &newState);
 
   ref<const MemoryObject> findMemoryObject(const Array *array) const;
 

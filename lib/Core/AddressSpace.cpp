@@ -464,7 +464,7 @@ bool AddressSpace::copyInConcrete(ExecutionState &state, const MemoryObject *mo,
     } else {
       ObjectState *wos = getWriteable(mo, os);
       if (state.inSymbolics(*mo)) {
-        state.replaceSymbolic(*mo, *wos);
+        state.replaceSymbolic(*mo, *os, *wos);
       }
       for (size_t i = 0; i < moSize; i++) {
         wos->write(i, ConstantExpr::create(address[i], Expr::Int8));

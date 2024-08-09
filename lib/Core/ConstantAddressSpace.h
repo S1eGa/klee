@@ -37,14 +37,8 @@ class ConstantPointerGraph {
     }
   };
 
-  struct InternalObjectPairEq {
-    bool operator()(const ObjectPair &lhs, const ObjectPair &rhs) const {
-      return lhs.first == rhs.first;
-    }
-  };
-
   typedef std::unordered_map<ObjectPair, ConstantResolutionList,
-                             InternalObjectPairHash, InternalObjectPairEq>
+                             InternalObjectPairHash>
       ObjectGraphContainer;
 
 public:

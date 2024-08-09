@@ -26,6 +26,7 @@
 
 #include <cassert>
 #include <iomanip>
+#include <klee/Support/CompilerWarning.h>
 #include <set>
 #include <sstream>
 #include <string>
@@ -158,7 +159,8 @@ ExecutionState::ExecutionState(const ExecutionState &state)
       constraints(state.constraints), eventsRecorder(state.eventsRecorder),
       targetForest(state.targetForest), pathOS(state.pathOS),
       symPathOS(state.symPathOS), coveredLines(state.coveredLines),
-      symbolics(state.symbolics), resolvedPointers(state.resolvedPointers),
+      symbolics(state.symbolics), stateSymbolicsNum(state.stateSymbolicsNum),
+      resolvedPointers(state.resolvedPointers),
       cexPreferences(state.cexPreferences), arrayNames(state.arrayNames),
       steppedInstructions(state.steppedInstructions),
       steppedMemoryInstructions(state.steppedMemoryInstructions),
@@ -238,37 +240,85 @@ void ExecutionState::popFrame() {
   stack.popFrame();
 }
 
-void ExecutionState::addSymbolic(const MemoryObject &mo,
-                                 const ObjectState &os) {
-  assert(symbolics.count(&mo) == 0);
-  symbolics = symbolics.insert({&mo, Symbolic(&mo, &os, symbolics.size())});
+void ExecutionState::addSymbolic(const MemoryObject &object,
+                                 const ObjectState &state) {
+  if (symbolics.count(&object) == 0) {
+    symbolics = symbolics.insert(
+        {&object, ImmutableSet{Symbolic(&object, &state, stateSymbolicsNum)}});
+  } else {
+    const auto &oldSymbolicsOfObject = symbolics.at(&object);
+    auto newSymbolicsOfObject = oldSymbolicsOfObject.insert(
+        Symbolic(&object, &state, stateSymbolicsNum));
+    symbolics = symbolics.replace({&object, newSymbolicsOfObject});
+  }
+  ++stateSymbolicsNum;
 }
 
-void ExecutionState::replaceSymbolic(const MemoryObject &mo, ObjectState &os) {
-  assert(symbolics.count(&mo) != 0);
-  auto &symbolic = *symbolics.find(&mo);
-  symbolics = symbolics.replace({&mo, Symbolic(&mo, &os, symbolic.second.num)});
+void ExecutionState::replaceSymbolic(const MemoryObject &object,
+                                     const ObjectState &oldState,
+                                     const ObjectState &newState) {
+  assert(symbolics.count(&object) != 0);
+  const auto &oldSymbolicsSet = symbolics.at(&object);
+
+  // FIXME: search to log(n)
+  for (const auto &symbolic : oldSymbolicsSet) {
+    if (symbolic.objectState.get() == &oldState) {
+      Symbolic newSymbolic(&object, &newState, symbolic.num);
+      auto newSymbolicSet =
+          oldSymbolicsSet.remove(symbolic).insert(newSymbolic);
+      symbolics = symbolics.replace({&object, newSymbolicSet});
+      return;
+    }
+  }
+  assert(false);
+  unreachable();
 }
 
 ref<const MemoryObject>
 ExecutionState::findMemoryObject(const Array *array) const {
   // FIXME: use hash map instead
-  for (auto &[mo, symbolic] : symbolics) {
-    if (array == symbolic.array()) {
-      return mo;
+  for (auto &[mo, symbolicsSet] : symbolics) {
+    for (auto symbolic : symbolicsSet) {
+      if (array == symbolic.array()) {
+        return mo;
+      }
     }
   }
   return nullptr;
 }
 
 void ExecutionState::replaceMemoryObjectFromSymbolics(
-    const MemoryObject &oldMemObj, const MemoryObject &newMemObj,
-    ObjectState &newObjState) {
-  assert(&oldMemObj != &newMemObj);
-  auto oldSymbolicNum = symbolics.find(&oldMemObj)->second.num;
-  symbolics = symbolics.remove(&oldMemObj);
-  symbolics = symbolics.insert(
-      {&newMemObj, Symbolic(&newMemObj, &newObjState, oldSymbolicNum)});
+    const MemoryObject &oldObject, const MemoryObject &newObject,
+    const ObjectState &oldState, const ObjectState &newState) {
+  assert(symbolics.count(&oldObject) != 0);
+
+  assert(&oldObject != &newObject);
+
+  std::optional<std::size_t> symbolicNum;
+  {
+    const auto &oldSymbolicsSet = symbolics.at(&oldObject);
+
+    // FIXME: search to log(n)
+    for (const auto &symbolic : oldSymbolicsSet) {
+      if (symbolic.objectState.get() == &oldState) {
+        symbolicNum.emplace(symbolic.num);
+        symbolics =
+            symbolics.replace({&oldObject, oldSymbolicsSet.remove(symbolic)});
+        break;
+      }
+    }
+  }
+
+  if (symbolics.count(&newObject) == 0) {
+    symbolics = symbolics.insert(
+        {&newObject,
+         ImmutableSet{Symbolic(&newObject, &newState, *symbolicNum)}});
+  } else {
+    const auto &oldSymbolicsOfObject = symbolics.at(&newObject);
+    auto newSymbolicsOfObject = oldSymbolicsOfObject.insert(
+        Symbolic(&newObject, &newState, *symbolicNum));
+    symbolics = symbolics.replace({&newObject, newSymbolicsOfObject});
+  }
 }
 
 bool ExecutionState::inSymbolics(const MemoryObject &mo) const {

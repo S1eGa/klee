@@ -9,12 +9,6 @@ using namespace klee;
 
 void ConstantPointerGraph::addSource(const ObjectPair &objectPair) {
   if (objectGraph.count(objectPair) != 0) {
-    for (auto it : objectGraph) {
-      if (it.first.first == objectPair.first) {
-        assert(it.first.second == objectPair.second);
-      }
-    }
-
     return;
   }
   addReachableFrom(objectPair);

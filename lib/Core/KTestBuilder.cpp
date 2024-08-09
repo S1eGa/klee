@@ -62,18 +62,15 @@ KTestBuilder::KTestBuilder(const ExecutionState &state, const Assignment &model)
 }
 
 void KTestBuilder::initialize(const ExecutionState &state) {
-  for (auto &[object, symbolic] : state.symbolics) {
-    if (OnlyOutputMakeSymbolicArrays ? symbolic.isMakeSymbolic()
-                                     : symbolic.isReproducible()) {
-      assert(object == symbolic.memoryObject.get());
-      if (state.addressSpace.findObject(object).first != nullptr) {
-        assert(state.addressSpace.findObject(object).second ==
-               symbolic.objectState.get());
+  for (auto &[object, symbolicsSet] : state.symbolics) {
+    for (auto &symbolic : symbolicsSet) {
+      if (OnlyOutputMakeSymbolicArrays ? symbolic.isMakeSymbolic()
+                                       : symbolic.isReproducible()) {
+        assert(object == symbolic.memoryObject.get());
+        constantPointerGraph_.addSource(ObjectPair{symbolic.memoryObject.get(),
+                                                   symbolic.objectState.get()});
+        symbolics.push_back(symbolic);
       }
-
-      constantPointerGraph_.addSource(
-          ObjectPair{symbolic.memoryObject.get(), symbolic.objectState.get()});
-      symbolics.push_back(symbolic);
     }
   }
 

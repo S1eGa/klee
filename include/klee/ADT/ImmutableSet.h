@@ -11,6 +11,7 @@
 #define KLEE_IMMUTABLESET_H
 
 #include <functional>
+#include <initializer_list>
 
 #include "ImmutableTree.h"
 
@@ -37,6 +38,11 @@ public:
   ImmutableSet() {}
   ImmutableSet(const ImmutableSet &b) : elts(b.elts) {}
   ~ImmutableSet() {}
+  ImmutableSet(std::initializer_list<T> initList) {
+    for (auto &element : initList) {
+      *this = insert(element);
+    }
+  }
 
   ImmutableSet &operator=(const ImmutableSet &b) {
     elts = b.elts;
